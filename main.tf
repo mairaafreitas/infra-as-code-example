@@ -31,9 +31,10 @@ resource "aws_subnet" "subnet" {
 }
 
 resource "aws_instance" "instance" {
-  ami           = "ami-01cd4de4363ab6ee8"
-  instance_type = "t2.micro"
-  subnet_id     = aws_subnet.subnet.id
+  ami                    = "ami-01cd4de4363ab6ee8"
+  instance_type          = "t2.micro"
+  subnet_id              = aws_subnet.subnet.id
+  vpc_security_group_ids = [ aws_security_group.security_group.id ]
 
   user_data = <<-EOF
     #!/bin/bash
@@ -55,6 +56,45 @@ resource "aws_ssm_paramenter" "ssm_parameter" {
   name  = "vm_ip"
   type  = "String"
   value = aws_eip.eip.public_ip
+}
+
+resource "aws_route_table" "route_table" {
+  vpc_id = aws_vpc.vpc.id
+
+  route {
+    cidr_block = "0.0.0.0/0"
+    gateway_id = aws_internet_gateway.internet_gateway.id
+  }
+  
+}
+
+resource "aws_route_table_association" "route_table_association" {
+  subnet_id      = aws_subnet.subnet.id
+  route_table_id = aws_route_table.route_table.id
+}
+
+resource "aws_security_group" "security_group" {
+  vpc_id = aws_vpc.vpc.id
+  name   = "Allow SSH"
+
+  tags = {
+    Name = "Allow SSH"
+  }
+}
+
+resource "aws_vpc_security_group_ingress_rule" "sg_ingress_rules" {
+  security_group_id = aws_security_group.security_group.id
+  cidr_ipv4         = "0.0.0.0/0"
+  from_port         = 22
+  ip_protocol       = "tcp"
+  to_port           = 22
+}
+
+
+resource "aws_vpc_security_group_egress_rule" "sg_egress_rules" {
+  security_group_id = aws_security_group.security_group.id
+  cidr_ipv4         = "0.0.0.0/0"
+  ip_protocol       = "-1"
 }
 
 output "pivate_dns" {
