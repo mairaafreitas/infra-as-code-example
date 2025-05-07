@@ -1,5 +1,5 @@
-output "pivate_dns" {
-  value = aws_instance.instance.private_dns
+output "private_dns" {
+  value = module.cluster.private_dns
 }
 
 output "eip" {

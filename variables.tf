@@ -9,3 +9,7 @@ variable "vpc_cidr_block" {
 variable "subnet_cidr_blocks" {
   type = list(string)
 }
+
+variable "instance_count" {
+    type = number
+}

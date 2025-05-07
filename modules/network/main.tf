@@ -19,7 +19,7 @@ resource "aws_subnet" "subnets" {
   availability_zone = data.aws_availability_zones.available.names[count.index % length(data.aws_availability_zones.available.names)]
 
     tags = {
-        "Name" = "${var.prefix}-subnet-${count.index}"
+        Name = "${var.prefix}-subnet-${count.index}"
     }
 
 }
