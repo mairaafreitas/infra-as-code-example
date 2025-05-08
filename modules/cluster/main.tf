@@ -1,12 +1,3 @@
-
-data "aws_secretmanager_secret" "secret" {
-  arn = "arn:aws:secretsmanager:us-east-2:123456789012:secret:mysecret"
-}
-
-data "aws_secretmanager_secret_version" "current" {
-  secret_id = data.aws_secretmanager_secret.secret.id
-}
-
 resource "aws_launch_template" "template" {
   name = "${var.prefix}-template"
   image_id               = "ami-01cd4de4363ab6ee8"
@@ -15,8 +6,13 @@ resource "aws_launch_template" "template" {
   user_data = base64encode(
   <<-EOF
     #!/bin/bash
-    DB_STRING="Server=${jsondecode(data.aws_secretmanager_secret_version.current.secret_string)["Host"]}; DB=${jsondecode(data.aws_secretmanager_secret_version.current.secret_string)["DB"]}; "
-    echo $DB_STRING > test.txt
+    yum update -y
+    yum install -y nginx
+    systemctl start nginx
+    systemctl enable nginx
+    public_ip=$(curl -s http://checkip.amazonaws.com)
+    echo "<h1>Hello from ${public_ip}</h1>" | tee /usr/share/nginx/html/index.html > dev/null
+    systemctl restart nginx
   EOF
   )
 
@@ -39,6 +35,7 @@ resource "aws_autoscaling_group" "autoscaling_group" {
   max_size             = 1
   min_size             = 3
   vpc_zone_identifier = var.subnet_ids
+  target_group_arns = [ aws_lb_target_group.app_target_group.arn ]
   
   launch_template {
     id      = aws_launch_template.template.id
@@ -96,4 +93,51 @@ resource "aws_cloudwatch_metric_alarm" "scale_in_alarm" {
     AutoScalingGroupName = aws_autoscaling_group.autoscaling_group.name
   }
   
+}
+
+resource "aws_lb" "app_load_balancer" {
+  name               = "${var.prefix}-app-load-balancer"
+  internal           = false
+  load_balancer_type = "application"
+  security_groups    = var.security_group_ids
+  subnets            = var.subnet_ids
+
+  enable_deletion_protection = false
+
+  tags = {
+    Name = "${var.prefix}-app-load-balancer"
+  }
+  
+}
+
+resource "aws_lb_target_group" "app_target_group" {
+  name     = "${var.prefix}-app-target-group"
+  port     = 80
+  protocol = "HTTP"
+  vpc_id   = var.vpc_id
+
+  health_check {
+    path                = "/"
+    interval            = 30
+    timeout             = 5
+    healthy_threshold   = 3
+    unhealthy_threshold = 3
+    matcher             = "200"
+  }
+
+  tags = {
+    Name = "${var.prefix}-app-target-group"
+  }
+  
+}
+
+resource "aws_lb_listener" "app_lb_listener" {
+  load_balancer_arn = aws_lb.app_load_balancer.arn
+  port              = 80
+  protocol          = "HTTP"
+
+  default_action {
+    type             = "forward"
+    target_group_arn = aws_lb_target_group.app_target_group.arn
+  }
 }

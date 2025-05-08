@@ -14,3 +14,6 @@ variable "instance_count" {
     type        = number
 }
 
+variable "vpc_id" {
+    type        = string
+}

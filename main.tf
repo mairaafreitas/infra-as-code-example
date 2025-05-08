@@ -6,9 +6,10 @@ module "network" {
 }
 
 module "cluster" {
-  source = "./modules/cluster"
-  prefix = var.prefix
-  subnet_ids = module.network.subnet_id
-  instance_count = var.instance_count
+  source             = "./modules/cluster"
+  prefix             = var.prefix
+  subnet_ids         = module.network.subnet_id
+  instance_count     = var.instance_count
   security_group_ids = [module.network.security_group_ids]
+  vpc_id             = module.network.vpc_id
 }
