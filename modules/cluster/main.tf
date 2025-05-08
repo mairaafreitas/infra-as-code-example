@@ -45,3 +45,55 @@ resource "aws_autoscaling_group" "autoscaling_group" {
     version = "$Latest"
   }
 }
+
+resource "aws_autoscaling_policy" "scale_out_policy" {
+  name                   = "${var.prefix}-scale-out"
+  autoscaling_group_name = aws_autoscaling_group.autoscaling_group.name
+  scaling_adjustment     = 1
+  adjustment_type        = "ChangeInCapacity"
+  cooldown               = 60
+}
+
+resource "aws_cloudwatch_metric_alarm" "scale_out_alarm" {
+  alarm_description   = "Monitors CPU utilization"
+  alarm_actions       = [aws_autoscaling_policy.scale_out_policy.arn]
+  alarm_name          = "${var.prefix}-scale-out-alarm"
+  comparison_operator = "GreaterThanThreshold"
+  threshold           = "60"
+  statistic           = "Average"
+  metric_name         = "CPUUtilization"
+  namespace           = "AWS/EC2"
+  period              = 30
+  evaluation_periods  = 3
+
+  dimensions = {
+    AutoScalingGroupName = aws_autoscaling_group.autoscaling_group.name
+  }
+  
+}
+
+resource "aws_autoscaling_policy" "scale_in_policy" {
+  name                   = "${var.prefix}-scale-in"
+  autoscaling_group_name = aws_autoscaling_group.autoscaling_group.name
+  scaling_adjustment     = -1
+  adjustment_type        = "ChangeInCapacity"
+  cooldown               = 60
+}
+
+resource "aws_cloudwatch_metric_alarm" "scale_in_alarm" {
+  alarm_description   = "Monitors CPU utilization"
+  alarm_actions       = [aws_autoscaling_policy.scale_in_alarm.arn]
+  alarm_name          = "${var.prefix}-scale-in-alarm"
+  comparison_operator = "LessThanOrEqualToThreshold"
+  threshold           = "20"
+  statistic           = "Average"
+  metric_name         = "CPUUtilization"
+  namespace           = "AWS/EC2"
+  period              = 30
+  evaluation_periods  = 3
+
+  dimensions = {
+    AutoScalingGroupName = aws_autoscaling_group.autoscaling_group.name
+  }
+  
+}
