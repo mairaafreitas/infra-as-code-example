@@ -3,18 +3,7 @@ resource "aws_launch_template" "template" {
   image_id               = "ami-01cd4de4363ab6ee8"
   instance_type          = "t2.micro"
 
-  user_data = base64encode(
-  <<-EOF
-    #!/bin/bash
-    yum update -y
-    yum install -y nginx
-    systemctl start nginx
-    systemctl enable nginx
-    public_ip=$(curl -s http://checkip.amazonaws.com)
-    echo "<h1>Hello from ${public_ip}</h1>" | tee /usr/share/nginx/html/index.html > dev/null
-    systemctl restart nginx
-  EOF
-  )
+  user_data = base64encode(var.user_data)
 
   network_interfaces {
     associate_public_ip_address = true
@@ -31,9 +20,9 @@ resource "aws_launch_template" "template" {
 
 resource "aws_autoscaling_group" "autoscaling_group" {
   name= "${var.prefix}-autoscaling-group"
-  desired_capacity     = 2
-  max_size             = 1
-  min_size             = 3
+  desired_capacity     = var.desired_capacity
+  max_size             = var.max_size
+  min_size             = var.min_size
   vpc_zone_identifier = var.subnet_ids
   target_group_arns = [ aws_lb_target_group.app_target_group.arn ]
   
@@ -46,9 +35,9 @@ resource "aws_autoscaling_group" "autoscaling_group" {
 resource "aws_autoscaling_policy" "scale_out_policy" {
   name                   = "${var.prefix}-scale-out"
   autoscaling_group_name = aws_autoscaling_group.autoscaling_group.name
-  scaling_adjustment     = 1
+  scaling_adjustment     = var.scale_out.scale_adjustment
   adjustment_type        = "ChangeInCapacity"
-  cooldown               = 60
+  cooldown               = var.scale_out.cooldown
 }
 
 resource "aws_cloudwatch_metric_alarm" "scale_out_alarm" {
@@ -56,7 +45,7 @@ resource "aws_cloudwatch_metric_alarm" "scale_out_alarm" {
   alarm_actions       = [aws_autoscaling_policy.scale_out_policy.arn]
   alarm_name          = "${var.prefix}-scale-out-alarm"
   comparison_operator = "GreaterThanThreshold"
-  threshold           = "60"
+  threshold           = var.scale_out.threshold
   statistic           = "Average"
   metric_name         = "CPUUtilization"
   namespace           = "AWS/EC2"
@@ -69,12 +58,13 @@ resource "aws_cloudwatch_metric_alarm" "scale_out_alarm" {
   
 }
 
+
 resource "aws_autoscaling_policy" "scale_in_policy" {
   name                   = "${var.prefix}-scale-in"
   autoscaling_group_name = aws_autoscaling_group.autoscaling_group.name
-  scaling_adjustment     = -1
+  scaling_adjustment     = var.scale_in.scale_adjustment
   adjustment_type        = "ChangeInCapacity"
-  cooldown               = 60
+  cooldown               = var.scale_in.cooldown
 }
 
 resource "aws_cloudwatch_metric_alarm" "scale_in_alarm" {
@@ -82,7 +72,7 @@ resource "aws_cloudwatch_metric_alarm" "scale_in_alarm" {
   alarm_actions       = [aws_autoscaling_policy.scale_in_alarm.arn]
   alarm_name          = "${var.prefix}-scale-in-alarm"
   comparison_operator = "LessThanOrEqualToThreshold"
-  threshold           = "20"
+  threshold           = var.scale_in.threshold
   statistic           = "Average"
   metric_name         = "CPUUtilization"
   namespace           = "AWS/EC2"
