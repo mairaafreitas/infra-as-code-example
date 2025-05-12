@@ -1,12 +1,12 @@
 module "network" {
-  source = "./modules/network"
+  source = "../modules/network"
   vpc_cidr_block = var.vpc_cidr_block
   subnet_cidr_blocks = var.subnet_cidr_blocks
   prefix = var.prefix
 }
 
 module "cluster" {
-  source             = "./modules/cluster"
+  source             = "../modules/cluster"
   prefix             = var.prefix
   subnet_ids         = module.network.subnet_id
   instance_count     = var.instance_count
@@ -23,7 +23,7 @@ module "cluster" {
     systemctl restart nginx
   EOF
   desired_capacity = 1
-  max_size         = 3
+  max_size         = 2
   min_size         = 1
   scale_out = var.scale_out
   scale_in  = var.scale_in

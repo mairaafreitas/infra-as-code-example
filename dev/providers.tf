@@ -6,8 +6,14 @@ terraform {
     }
   }
   required_version = "≳ 1.0.0"
-}
 
+  backend "s3" {
+    bucket         = "terraform-state"
+    key            = "states/terraform.dev.tfstate"
+    profile        = "default"
+    dynamodb_table = "tf-state-locking"
+  }
+}
 
 provider "aws" {
   region  = "us-east-2"
