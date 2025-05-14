@@ -16,7 +16,7 @@ run "network" {
   }
 
   module {
-    source = "../network"
+    source = "../../network"
   }
 
   assert {
@@ -72,7 +72,7 @@ run "verify_http" {
   }
 
   module {
-    source = "../testing/http"
+    source = "../../testing/http"
   }
 
   assert {
