@@ -1,0 +1,433 @@
+Resources:
+  websitevpc:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: 10.0.0.0/16
+      Tags:
+        - Key: Name
+          Value: website-vpc
+    Metadata:
+      aws:cdk:path: WebsiteStack/website-vpc
+  websiteigw:
+    Type: AWS::EC2::InternetGateway
+    Metadata:
+      aws:cdk:path: WebsiteStack/website-igw
+  websiteigwattachment:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      InternetGatewayId:
+        Fn::GetAtt:
+          - websiteigw
+          - InternetGatewayId
+      VpcId:
+        Fn::GetAtt:
+          - websitevpc
+          - VpcId
+    Metadata:
+      aws:cdk:path: WebsiteStack/website-igwattachment
+  websiteroutetable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId:
+        Fn::GetAtt:
+          - websitevpc
+          - VpcId
+    Metadata:
+      aws:cdk:path: WebsiteStack/website-routetable
+  websiteinternetroute:
+    Type: AWS::EC2::Route
+    Properties:
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId:
+        Fn::GetAtt:
+          - websiteigw
+          - InternetGatewayId
+      RouteTableId:
+        Fn::GetAtt:
+          - websiteroutetable
+          - RouteTableId
+    Metadata:
+      aws:cdk:path: WebsiteStack/website-internetroute
+  websitesubnet0:
+    Type: AWS::EC2::Subnet
+    Properties:
+      AvailabilityZone:
+        Fn::Select:
+          - 0
+          - Fn::GetAZs: ""
+      CidrBlock: 10.0.0.0/24
+      Tags:
+        - Key: Name
+          Value: website-subnet-0
+      VpcId:
+        Fn::GetAtt:
+          - websitevpc
+          - VpcId
+    Metadata:
+      aws:cdk:path: WebsiteStack/website-subnet0
+  websitertassociation0:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId:
+        Fn::GetAtt:
+          - websiteroutetable
+          - RouteTableId
+      SubnetId:
+        Fn::GetAtt:
+          - websitesubnet0
+          - SubnetId
+    Metadata:
+      aws:cdk:path: WebsiteStack/website-rtassociation0
+  websitesubnet1:
+    Type: AWS::EC2::Subnet
+    Properties:
+      AvailabilityZone:
+        Fn::Select:
+          - 1
+          - Fn::GetAZs: ""
+      CidrBlock: 10.0.1.0/24
+      Tags:
+        - Key: Name
+          Value: website-subnet-1
+      VpcId:
+        Fn::GetAtt:
+          - websitevpc
+          - VpcId
+    Metadata:
+      aws:cdk:path: WebsiteStack/website-subnet1
+  websitertassociation1:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId:
+        Fn::GetAtt:
+          - websiteroutetable
+          - RouteTableId
+      SubnetId:
+        Fn::GetAtt:
+          - websitesubnet1
+          - SubnetId
+    Metadata:
+      aws:cdk:path: WebsiteStack/website-rtassociation1
+  websitesg:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: website-allow-ssh-http
+      GroupName: website-allow-ssh-http
+      SecurityGroupEgress:
+        - CidrIp: 0.0.0.0/0
+          Description: Allow Egress
+          IpProtocol: "-1"
+      SecurityGroupIngress:
+        - CidrIp: 0.0.0.0/0
+          Description: Allow SSH
+          FromPort: 22
+          IpProtocol: tcp
+          ToPort: 22
+        - CidrIp: 0.0.0.0/0
+          Description: Allow HTTP
+          FromPort: 80
+          IpProtocol: tcp
+          ToPort: 80
+      VpcId:
+        Fn::GetAtt:
+          - websitevpc
+          - VpcId
+    Metadata:
+      aws:cdk:path: WebsiteStack/website-sg
+  websitetemplate:
+    Type: AWS::EC2::LaunchTemplate
+    Properties:
+      LaunchTemplateData:
+        ImageId: ami-01cd4de4363ab6ee8
+        InstanceType: t2.micro
+        NetworkInterfaces:
+          - AssociatePublicIpAddress: true
+            DeviceIndex: 0
+            Groups:
+              - Fn::GetAtt:
+                  - websitesg
+                  - GroupId
+        TagSpecifications:
+          - ResourceType: instance
+            Tags:
+              - Key: Name
+                Value: website-node
+        UserData:
+          Fn::Base64: |-
+            #!/bin/bash
+            yum update -y
+            yum install -y nginx
+            systemctl start nginx
+            systemctl enable nginx
+            public_ip=$(curl http://checkip.amazonaws.com)
+            echo "<html>
+              <head><title>Hello</title></head>
+              <body>
+                <h1>Hello, $public_ip</h1>
+              </body>
+            </html>" | tee /usr/share/nginx/html/index.html > /dev/null
+            systemctl restart nginx
+      LaunchTemplateName: website-template
+    Metadata:
+      aws:cdk:path: WebsiteStack/website-template
+  websiteapptg:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      HealthCheckEnabled: true
+      HealthCheckIntervalSeconds: 30
+      HealthCheckPath: /
+      HealthCheckPort: traffic-port
+      HealthCheckProtocol: HTTP
+      HealthCheckTimeoutSeconds: 5
+      HealthyThresholdCount: 3
+      Matcher:
+        HttpCode: "200"
+      Name: website-app-tg
+      Port: 80
+      Protocol: HTTP
+      Tags:
+        - Key: Name
+          Value: website-app-tg
+      UnhealthyThresholdCount: 3
+      VpcId:
+        Fn::GetAtt:
+          - websitevpc
+          - VpcId
+    Metadata:
+      aws:cdk:path: WebsiteStack/website-app-tg
+  websiteasg:
+    Type: AWS::AutoScaling::AutoScalingGroup
+    Properties:
+      AutoScalingGroupName: website-asg
+      DesiredCapacity: "2"
+      LaunchTemplate:
+        LaunchTemplateId:
+          Ref: websitetemplate
+        Version:
+          Fn::GetAtt:
+            - websitetemplate
+            - LatestVersionNumber
+      MaxSize: "3"
+      MinSize: "1"
+      TargetGroupARNs:
+        - Fn::GetAtt:
+            - websiteapptg
+            - TargetGroupArn
+      VPCZoneIdentifier:
+        - Fn::GetAtt:
+            - websitesubnet0
+            - SubnetId
+        - Fn::GetAtt:
+            - websitesubnet1
+            - SubnetId
+    Metadata:
+      aws:cdk:path: WebsiteStack/website-asg
+  websitescaleout:
+    Type: AWS::AutoScaling::ScalingPolicy
+    Properties:
+      AdjustmentType: ChangeInCapacity
+      AutoScalingGroupName: website-asg
+      Cooldown: "60"
+      PolicyType: SimpleScaling
+      ScalingAdjustment: 1
+    DependsOn:
+      - websiteasg
+    Metadata:
+      aws:cdk:path: WebsiteStack/website-scale-out
+  websitescalein:
+    Type: AWS::AutoScaling::ScalingPolicy
+    Properties:
+      AdjustmentType: ChangeInCapacity
+      AutoScalingGroupName: website-asg
+      Cooldown: "60"
+      PolicyType: SimpleScaling
+      ScalingAdjustment: -1
+    DependsOn:
+      - websiteasg
+    Metadata:
+      aws:cdk:path: WebsiteStack/website-scale-in
+  websitescaleoutalarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmActions:
+        - Ref: websitescaleout
+      AlarmDescription: Monitors CPU utilization
+      AlarmName: website-scale-out-alarm
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      Dimensions:
+        - Name: AutoScalingGroupName
+          Value: website-asg
+      EvaluationPeriods: 3
+      MetricName: CPUUtilization
+      Namespace: AWS/EC2
+      Period: 30
+      Statistic: Average
+      Threshold: 70
+    Metadata:
+      aws:cdk:path: WebsiteStack/website-scale-out-alarm
+  websitescaleinalarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmActions:
+        - Ref: websitescalein
+      AlarmDescription: Monitors CPU utilization
+      AlarmName: website-scale-in-alarm
+      ComparisonOperator: LessThanOrEqualToThreshold
+      Dimensions:
+        - Name: AutoScalingGroupName
+          Value: website-asg
+      EvaluationPeriods: 3
+      MetricName: CPUUtilization
+      Namespace: AWS/EC2
+      Period: 30
+      Statistic: Average
+      Threshold: 20
+    Metadata:
+      aws:cdk:path: WebsiteStack/website-scale-in-alarm
+  websiteapplb:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      Name: website-app-lb
+      Scheme: internet-facing
+      SecurityGroups:
+        - Fn::GetAtt:
+            - websitesg
+            - GroupId
+      Subnets:
+        - Fn::GetAtt:
+            - websitesubnet0
+            - SubnetId
+        - Fn::GetAtt:
+            - websitesubnet1
+            - SubnetId
+      Tags:
+        - Key: Name
+          Value: website-app-lb
+      Type: application
+    Metadata:
+      aws:cdk:path: WebsiteStack/website-app-lb
+  websiteapplblistener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      DefaultActions:
+        - TargetGroupArn:
+            Ref: websiteapptg
+          Type: forward
+      LoadBalancerArn:
+        Ref: websiteapplb
+      Port: 80
+      Protocol: HTTP
+    Metadata:
+      aws:cdk:path: WebsiteStack/website-app-lb-listener
+  CDKMetadata:
+    Type: AWS::CDK::Metadata
+    Properties:
+      Analytics: v2:deflate64:H4sIAAAAAAAA/0WOTWuDQBCGf0vu67amUMjRegiFHiRKr2UcJ7rNOht2Zysi/veihnia93k/YI46Pb3r1wMMIcHmllhT66kUwJuCIfxMhEc95Vf+LnKVX/mThTyTnEFogFFtyYMyEcCuJ5bFv7goVEFt6UmLKGPNJLvaa1kIDg2IcbzGhNEbGc/exftifEFk7Crq7xaEZkUWghi0DpoaLDAabv+2byvwLcm+dNB8rBXyK5sgxORnBVFcQLCG23WYRXHlxs/1gwtnDY6zQutiM4Bgp5eBBd/PsypG6Ry/vOk01afDbzAm8ZHF9KQv2/0HI5bl9WoBAAA=
+    Metadata:
+      aws:cdk:path: WebsiteStack/CDKMetadata/Default
+    Condition: CDKMetadataAvailable
+Conditions:
+  CDKMetadataAvailable:
+    Fn::Or:
+      - Fn::Or:
+          - Fn::Equals:
+              - Ref: AWS::Region
+              - af-south-1
+          - Fn::Equals:
+              - Ref: AWS::Region
+              - ap-east-1
+          - Fn::Equals:
+              - Ref: AWS::Region
+              - ap-northeast-1
+          - Fn::Equals:
+              - Ref: AWS::Region
+              - ap-northeast-2
+          - Fn::Equals:
+              - Ref: AWS::Region
+              - ap-northeast-3
+          - Fn::Equals:
+              - Ref: AWS::Region
+              - ap-south-1
+          - Fn::Equals:
+              - Ref: AWS::Region
+              - ap-south-2
+          - Fn::Equals:
+              - Ref: AWS::Region
+              - ap-southeast-1
+          - Fn::Equals:
+              - Ref: AWS::Region
+              - ap-southeast-2
+          - Fn::Equals:
+              - Ref: AWS::Region
+              - ap-southeast-3
+      - Fn::Or:
+          - Fn::Equals:
+              - Ref: AWS::Region
+              - ap-southeast-4
+          - Fn::Equals:
+              - Ref: AWS::Region
+              - ca-central-1
+          - Fn::Equals:
+              - Ref: AWS::Region
+              - ca-west-1
+          - Fn::Equals:
+              - Ref: AWS::Region
+              - cn-north-1
+          - Fn::Equals:
+              - Ref: AWS::Region
+              - cn-northwest-1
+          - Fn::Equals:
+              - Ref: AWS::Region
+              - eu-central-1
+          - Fn::Equals:
+              - Ref: AWS::Region
+              - eu-central-2
+          - Fn::Equals:
+              - Ref: AWS::Region
+              - eu-north-1
+          - Fn::Equals:
+              - Ref: AWS::Region
+              - eu-south-1
+          - Fn::Equals:
+              - Ref: AWS::Region
+              - eu-south-2
+      - Fn::Or:
+          - Fn::Equals:
+              - Ref: AWS::Region
+              - eu-west-1
+          - Fn::Equals:
+              - Ref: AWS::Region
+              - eu-west-2
+          - Fn::Equals:
+              - Ref: AWS::Region
+              - eu-west-3
+          - Fn::Equals:
+              - Ref: AWS::Region
+              - il-central-1
+          - Fn::Equals:
+              - Ref: AWS::Region
+              - me-central-1
+          - Fn::Equals:
+              - Ref: AWS::Region
+              - me-south-1
+          - Fn::Equals:
+              - Ref: AWS::Region
+              - sa-east-1
+          - Fn::Equals:
+              - Ref: AWS::Region
+              - us-east-1
+          - Fn::Equals:
+              - Ref: AWS::Region
+              - us-east-2
+          - Fn::Equals:
+              - Ref: AWS::Region
+              - us-west-1
+      - Fn::Equals:
+          - Ref: AWS::Region
+          - us-west-2
+Parameters:
+  BootstrapVersion:
+    Type: AWS::SSM::Parameter::Value<String>
+    Default: /cdk-bootstrap/hnb659fds/version
+    Description: Version of the CDK Bootstrap resources in this environment, automatically retrieved from SSM Parameter Store. [cdk:skip]
+
